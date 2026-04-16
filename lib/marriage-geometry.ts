@@ -43,7 +43,7 @@ export interface BezierPoints {
   p3: { x: number; y: number };
 }
 
-export function getMarriageBezierPoints(params: {
+export function getRelationshipBezierPoints(params: {
   sourceX: number;
   sourceY: number;
   targetX: number;
@@ -162,5 +162,5 @@ export function junctionPositionFromSpouses(
   };
 }
 
-export const MARRIAGE_GAP_T_LOW = 0.42;
-export const MARRIAGE_GAP_T_HIGH = 0.58;
+export const RELATIONSHIP_GAP_T_LOW = 0.42;
+export const RELATIONSHIP_GAP_T_HIGH = 0.58;

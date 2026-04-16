@@ -16,16 +16,16 @@ import { generateRandomPersonName } from "@/lib/family-tree-names";
 import { junctionPositionFromSpouses } from "@/lib/marriage-geometry";
 import type {
   FamilyTreeNodeType,
-  MarriageEdgeData,
-  MarriageJunctionNodeType,
   PersonData,
   PersonNodeType,
+  RelationshipEdgeData,
+  RelationshipJunctionNodeType,
 } from "@/types/family-tree";
 import {
   HANDLE_CHILD_TARGET,
   HANDLE_JUNCTION_OUT,
-  HANDLE_MARRIAGE_IN,
-  HANDLE_MARRIAGE_OUT,
+  HANDLE_RELATIONSHIP_IN,
+  HANDLE_RELATIONSHIP_OUT,
   PERSON_NODE_DRAG_HANDLE_SELECTOR,
 } from "@/types/family-tree";
 
@@ -36,14 +36,81 @@ function jitterPosition(position: XYPosition): XYPosition {
   };
 }
 
-function hasMarriageBetween(
+const PERSON_PLACEHOLDER_W = 88;
+const PERSON_PLACEHOLDER_H = 108;
+const CHILD_GRID_PAD = 14;
+
+function personNodeRect(n: PersonNodeType) {
+  const w = n.measured?.width ?? 80;
+  const h = n.measured?.height ?? 96;
+  return {
+    left: n.position.x,
+    top: n.position.y,
+    right: n.position.x + w,
+    bottom: n.position.y + h,
+  };
+}
+
+function rectMarginOverlap(
+  a: { left: number; top: number; right: number; bottom: number },
+  b: { left: number; top: number; right: number; bottom: number },
+  margin: number,
+) {
+  return !(
+    a.right + margin < b.left ||
+    a.left - margin > b.right ||
+    a.bottom + margin < b.top ||
+    a.top - margin > b.bottom
+  );
+}
+
+function findFreeChildPositionBelowJunction(
+  nodes: FamilyTreeNodeType[],
+  junctionId: string,
+): XYPosition {
+  const junction = nodes.find(
+    (n) => n.id === junctionId && n.type === "relationshipJunction",
+  );
+  if (!junction) return { x: 0, y: 0 };
+
+  const jw = junction.measured?.width ?? 12;
+  const jh = junction.measured?.height ?? 12;
+  const anchorX = junction.position.x + jw / 2 - PERSON_PLACEHOLDER_W / 2;
+  const anchorY = junction.position.y + jh + 28;
+
+  const people = nodes.filter((n) => n.type === "person") as PersonNodeType[];
+
+  for (let row = 0; row < 14; row++) {
+    for (let col = -5; col <= 5; col++) {
+      const x = anchorX + col * (PERSON_PLACEHOLDER_W + CHILD_GRID_PAD);
+      const y = anchorY + row * (PERSON_PLACEHOLDER_H + CHILD_GRID_PAD);
+      const probe = {
+        left: x,
+        top: y,
+        right: x + PERSON_PLACEHOLDER_W,
+        bottom: y + PERSON_PLACEHOLDER_H,
+      };
+      const hit = people.some((p) =>
+        rectMarginOverlap(probe, personNodeRect(p), 6),
+      );
+      if (!hit) return { x, y };
+    }
+  }
+
+  return {
+    x: anchorX + (Math.random() - 0.5) * 120,
+    y: anchorY + (Math.random() - 0.5) * 120,
+  };
+}
+
+function hasRelationshipBetween(
   edges: Edge[],
   a: string,
   b: string,
 ): boolean {
   return edges.some(
     (e) =>
-      e.type === "marriage" &&
+      e.type === "relationship" &&
       ((e.source === a && e.target === b) ||
         (e.source === b && e.target === a)),
   );
@@ -53,10 +120,10 @@ function syncJunctionPositions(
   nodes: FamilyTreeNodeType[],
   edges: Edge[],
 ): FamilyTreeNodeType[] {
-  const marriages = edges.filter((e) => e.type === "marriage");
+  const relationships = edges.filter((e) => e.type === "relationship");
   return nodes.map((n) => {
-    if (n.type !== "marriageJunction") return n;
-    const m = marriages.find((e) => e.id === n.data.marriageEdgeId);
+    if (n.type !== "relationshipJunction") return n;
+    const m = relationships.find((e) => e.id === n.data.relationshipEdgeId);
     if (!m) return n;
     const na = nodes.find(
       (x) => x.id === m.source && x.type === "person",
@@ -72,6 +139,49 @@ function syncJunctionPositions(
   });
 }
 
+/** Maps graphs persisted before the marriage → relationship rename. */
+function normalizePersistedRelationshipModel(
+  nodes: FamilyTreeNodeType[],
+  edges: Edge[],
+): { nodes: FamilyTreeNodeType[]; edges: Edge[]; changed: boolean } {
+  let changed = false;
+
+  const nextEdges = edges.map((e) => {
+    if (e.type === "marriage") {
+      changed = true;
+      return { ...e, type: "relationship" as const };
+    }
+    return e;
+  });
+
+  const nextNodes = nodes.map((n) => {
+    const legacyType = (n as { type: string }).type;
+    if (legacyType === "marriageJunction") {
+      changed = true;
+      const d = n.data as Record<string, unknown>;
+      const rid = d.relationshipEdgeId ?? d.marriageEdgeId;
+      return {
+        ...n,
+        type: "relationshipJunction" as const,
+        data: { relationshipEdgeId: String(rid) },
+      };
+    }
+    if (n.type === "relationshipJunction") {
+      const d = n.data as Record<string, unknown>;
+      if (d.marriageEdgeId != null && d.relationshipEdgeId == null) {
+        changed = true;
+        return {
+          ...n,
+          data: { relationshipEdgeId: String(d.marriageEdgeId) },
+        };
+      }
+    }
+    return n;
+  });
+
+  return { nodes: nextNodes, edges: nextEdges, changed };
+}
+
 interface FamilyTreeState {
   nodes: FamilyTreeNodeType[];
   edges: Edge[];
@@ -79,9 +189,12 @@ interface FamilyTreeState {
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (connection: Connection) => void;
   addPersonAtPosition: (position: XYPosition) => void;
-  addChildFromMarriage: (marriageEdgeId: string, position: XYPosition) => void;
+  addChildFromRelationship: (
+    relationshipEdgeId: string,
+    position?: XYPosition,
+  ) => void;
   updatePersonData: (nodeId: string, patch: Partial<PersonData>) => void;
-  migrateMarriageJunctionsIfNeeded: () => void;
+  migrateRelationshipGraphIfNeeded: () => void;
 }
 
 export const useFamilyTreeStore = create<FamilyTreeState>()(
@@ -90,24 +203,25 @@ export const useFamilyTreeStore = create<FamilyTreeState>()(
       nodes: [],
       edges: [],
 
-      migrateMarriageJunctionsIfNeeded: () => {
+      migrateRelationshipGraphIfNeeded: () => {
         const { nodes, edges } = get();
-        let nextNodes = [...nodes];
-        let nextEdges = edges.map((e) => ({
+        const normalized = normalizePersistedRelationshipModel(nodes, edges);
+        let nextNodes = [...normalized.nodes];
+        let nextEdges = normalized.edges.map((e) => ({
           ...e,
           data: e.data ? { ...(e.data as object) } : {},
         }));
-        let changed = false;
+        let changed = normalized.changed;
 
         for (let i = 0; i < nextEdges.length; i++) {
           const e = nextEdges[i];
-          if (e.type !== "marriage") continue;
-          const data = (e.data ?? {}) as MarriageEdgeData;
+          if (e.type !== "relationship") continue;
+          const data = (e.data ?? {}) as RelationshipEdgeData;
           let junctionId = data.junctionId;
           const hasJunctionNode =
             junctionId &&
             nextNodes.some(
-              (n) => n.id === junctionId && n.type === "marriageJunction",
+              (n) => n.id === junctionId && n.type === "relationshipJunction",
             );
           if (hasJunctionNode) continue;
 
@@ -122,9 +236,9 @@ export const useFamilyTreeStore = create<FamilyTreeState>()(
 
           nextNodes.push({
             id: junctionId,
-            type: "marriageJunction",
+            type: "relationshipJunction",
             position: junctionPositionFromSpouses(na, nb),
-            data: { marriageEdgeId: e.id },
+            data: { relationshipEdgeId: e.id },
             draggable: false,
             selectable: false,
           });
@@ -135,9 +249,9 @@ export const useFamilyTreeStore = create<FamilyTreeState>()(
           changed = true;
         }
 
-        const marriages = nextEdges.filter((e) => e.type === "marriage");
-        for (const m of marriages) {
-          const jid = (m.data as MarriageEdgeData).junctionId;
+        const relationships = nextEdges.filter((e) => e.type === "relationship");
+        for (const m of relationships) {
+          const jid = (m.data as RelationshipEdgeData).junctionId;
           if (!jid) continue;
           const A = m.source;
           const B = m.target;
@@ -226,8 +340,8 @@ export const useFamilyTreeStore = create<FamilyTreeState>()(
           const junctionIdsToRemove = new Set<string>();
           for (const c of removed) {
             const gone = prevEdges.find((e) => e.id === c.id);
-            if (gone?.type === "marriage") {
-              const jid = (gone.data as MarriageEdgeData | undefined)
+            if (gone?.type === "relationship") {
+              const jid = (gone.data as RelationshipEdgeData | undefined)
                 ?.junctionId;
               if (jid) junctionIdsToRemove.add(jid);
             }
@@ -235,7 +349,7 @@ export const useFamilyTreeStore = create<FamilyTreeState>()(
           if (junctionIdsToRemove.size > 0) {
             nodes = nodes.filter(
               (n) =>
-                n.type !== "marriageJunction" ||
+                n.type !== "relationshipJunction" ||
                 !junctionIdsToRemove.has(n.id),
             );
             edges = edges.filter(
@@ -256,14 +370,14 @@ export const useFamilyTreeStore = create<FamilyTreeState>()(
         if (!source || !target) return;
         if (source === target) return;
         if (
-          sourceHandle !== HANDLE_MARRIAGE_OUT ||
-          targetHandle !== HANDLE_MARRIAGE_IN
+          sourceHandle !== HANDLE_RELATIONSHIP_OUT ||
+          targetHandle !== HANDLE_RELATIONSHIP_IN
         ) {
           return;
         }
 
         const { edges, nodes } = get();
-        if (hasMarriageBetween(edges, source, target)) return;
+        if (hasRelationshipBetween(edges, source, target)) return;
 
         const na = nodes.find(
           (n) => n.id === source && n.type === "person",
@@ -273,14 +387,14 @@ export const useFamilyTreeStore = create<FamilyTreeState>()(
         ) as PersonNodeType | undefined;
         if (!na || !nb) return;
 
-        const marriageId = crypto.randomUUID();
+        const relationshipId = crypto.randomUUID();
         const junctionId = crypto.randomUUID();
 
-        const junctionNode: MarriageJunctionNodeType = {
+        const junctionNode: RelationshipJunctionNodeType = {
           id: junctionId,
-          type: "marriageJunction",
+          type: "relationshipJunction",
           position: junctionPositionFromSpouses(na, nb),
-          data: { marriageEdgeId: marriageId },
+          data: { relationshipEdgeId: relationshipId },
           draggable: false,
           selectable: false,
         };
@@ -290,8 +404,8 @@ export const useFamilyTreeStore = create<FamilyTreeState>()(
           edges: addEdge(
             {
               ...connection,
-              id: marriageId,
-              type: "marriage",
+              id: relationshipId,
+              type: "relationship",
               data: { junctionId },
             },
             edges,
@@ -314,23 +428,28 @@ export const useFamilyTreeStore = create<FamilyTreeState>()(
         set({ nodes: [...get().nodes, node] });
       },
 
-      addChildFromMarriage: (marriageEdgeId, position) => {
+      addChildFromRelationship: (relationshipEdgeId, position) => {
         const { edges, nodes } = get();
-        const marriage = edges.find(
-          (e) => e.id === marriageEdgeId && e.type === "marriage",
+        const relationship = edges.find(
+          (e) => e.id === relationshipEdgeId && e.type === "relationship",
         );
-        if (!marriage) return;
+        if (!relationship) return;
 
-        const junctionId = (marriage.data as MarriageEdgeData | undefined)
+        const junctionId = (relationship.data as RelationshipEdgeData | undefined)
           ?.junctionId;
         if (!junctionId) return;
+
+        const resolvedPosition =
+          position === undefined
+            ? findFreeChildPositionBelowJunction(nodes, junctionId)
+            : jitterPosition(position);
 
         const childId = crypto.randomUUID();
 
         const childNode: PersonNodeType = {
           id: childId,
           type: "person",
-          position: jitterPosition(position),
+          position: resolvedPosition,
           dragHandle: PERSON_NODE_DRAG_HANDLE_SELECTOR,
           data: {
             name: generateRandomPersonName(),

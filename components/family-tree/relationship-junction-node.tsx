@@ -2,10 +2,10 @@
 
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
-import type { MarriageJunctionNodeType } from "@/types/family-tree";
+import type { RelationshipJunctionNodeType } from "@/types/family-tree";
 import { HANDLE_JUNCTION_OUT } from "@/types/family-tree";
 
-export function MarriageJunctionNode({}: NodeProps<MarriageJunctionNodeType>) {
+export function RelationshipJunctionNode({}: NodeProps<RelationshipJunctionNodeType>) {
   return (
     <div
       className="flex size-3 items-center justify-center"

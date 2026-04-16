@@ -7,21 +7,23 @@ import {
   type EdgeProps,
 } from "@xyflow/react";
 import { Plus } from "lucide-react";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
+import { cn } from "@/lib/utils";
 import {
   cubicMidpoint,
   cubicToPathD,
-  getMarriageBezierPoints,
-  MARRIAGE_GAP_T_HIGH,
-  MARRIAGE_GAP_T_LOW,
+  getRelationshipBezierPoints,
+  RELATIONSHIP_GAP_T_HIGH,
+  RELATIONSHIP_GAP_T_LOW,
   splitCubicAt,
 } from "@/lib/marriage-geometry";
 import { useFamilyTreeStore } from "@/lib/family-tree-store";
 
 const MIN_DRAG_PX = 28;
+const DRAG_HINT_PX = 6;
 
-export function MarriageEdge({
+export function RelationshipEdge({
   id,
   sourceX,
   sourceY,
@@ -34,7 +36,7 @@ export function MarriageEdge({
 }: EdgeProps) {
   const bez = useMemo(
     () =>
-      getMarriageBezierPoints({
+      getRelationshipBezierPoints({
         sourceX,
         sourceY,
         targetX,
@@ -54,8 +56,14 @@ export function MarriageEdge({
 
   const { path1, path2, labelX, labelY } = useMemo(() => {
     const { p0, p1, p2, p3 } = bez;
-    const { left: seg1 } = splitCubicAt(p0, p1, p2, p3, MARRIAGE_GAP_T_LOW);
-    const { right: seg2 } = splitCubicAt(p0, p1, p2, p3, MARRIAGE_GAP_T_HIGH);
+    const { left: seg1 } = splitCubicAt(p0, p1, p2, p3, RELATIONSHIP_GAP_T_LOW);
+    const { right: seg2 } = splitCubicAt(
+      p0,
+      p1,
+      p2,
+      p3,
+      RELATIONSHIP_GAP_T_HIGH,
+    );
     const mid = cubicMidpoint(p0, p1, p2, p3);
     return {
       path1: cubicToPathD(seg1[0], seg1[1], seg1[2], seg1[3]),
@@ -66,18 +74,30 @@ export function MarriageEdge({
   }, [bez]);
 
   const { screenToFlowPosition } = useReactFlow();
-  const addChildFromMarriage = useFamilyTreeStore(
-    (s) => s.addChildFromMarriage,
+  const addChildFromRelationship = useFamilyTreeStore(
+    (s) => s.addChildFromRelationship,
   );
 
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLButtonElement>) => {
       e.preventDefault();
       e.stopPropagation();
       dragStartRef.current = { x: e.clientX, y: e.clientY };
+      setIsDragging(false);
       e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    [],
+  );
+
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      const start = dragStartRef.current;
+      if (!start || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+      const dist = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+      if (dist > DRAG_HINT_PX) setIsDragging(true);
     },
     [],
   );
@@ -86,21 +106,26 @@ export function MarriageEdge({
     (e: React.PointerEvent<HTMLButtonElement>) => {
       const start = dragStartRef.current;
       dragStartRef.current = null;
+      setIsDragging(false);
       if (start && e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
       if (!start) return;
       const dist = Math.hypot(e.clientX - start.x, e.clientY - start.y);
-      if (dist < MIN_DRAG_PX) return;
+      if (dist < MIN_DRAG_PX) {
+        addChildFromRelationship(id);
+        return;
+      }
       const flow = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-      addChildFromMarriage(id, flow);
+      addChildFromRelationship(id, flow);
     },
-    [addChildFromMarriage, id, screenToFlowPosition],
+    [addChildFromRelationship, id, screenToFlowPosition],
   );
 
   const onPointerCancel = useCallback(
     (e: React.PointerEvent<HTMLButtonElement>) => {
       dragStartRef.current = null;
+      setIsDragging(false);
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
@@ -139,14 +164,26 @@ export function MarriageEdge({
         >
           <button
             type="button"
-            title="Drag to place a child"
-            className="flex size-5 cursor-grab items-center justify-center rounded-full border border-background bg-card text-muted-foreground shadow-sm ring-1 ring-border transition-colors hover:bg-accent hover:text-accent-foreground active:cursor-grabbing"
+            title="Click to add a child in a free spot, or drag to place on the canvas"
+            className={cn(
+              "flex size-5 touch-none items-center justify-center rounded-full border border-background shadow-sm ring-1 transition-[transform,box-shadow,colors,ring-color] duration-150",
+              isDragging
+                ? "z-50 scale-125 cursor-grabbing bg-primary text-primary-foreground shadow-lg ring-2 ring-primary ring-offset-2 ring-offset-background"
+                : "cursor-grab bg-card text-muted-foreground ring-border hover:bg-accent hover:text-accent-foreground active:cursor-grabbing",
+            )}
             onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerCancel}
           >
-            <Plus className="size-2.5" aria-hidden />
-            <span className="sr-only">Drag to add child</span>
+            <Plus
+              className={cn("size-2.5 transition-transform", isDragging && "scale-110")}
+              aria-hidden
+            />
+            <span className="sr-only">
+              Add child from this relationship: click for automatic placement,
+              or drag to choose a position
+            </span>
           </button>
         </div>
       </EdgeLabelRenderer>

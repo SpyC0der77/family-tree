@@ -10,8 +10,8 @@ import type { PersonNodeType } from "@/types/family-tree";
 import {
   GENDER_BORDER,
   HANDLE_CHILD_TARGET,
-  HANDLE_MARRIAGE_IN,
-  HANDLE_MARRIAGE_OUT,
+  HANDLE_RELATIONSHIP_IN,
+  HANDLE_RELATIONSHIP_OUT,
   nextGender,
 } from "@/types/family-tree";
 
@@ -82,7 +82,7 @@ export function PersonNode({ id, data }: NodeProps<PersonNodeType>) {
       />
       <div className="relative flex items-center">
         <Handle
-          id={HANDLE_MARRIAGE_IN}
+          id={HANDLE_RELATIONSHIP_IN}
           type="target"
           position={Position.Left}
           className="!top-1/2 !left-0 !size-2.5 !-translate-y-1/2 !border-2 !border-background !bg-muted-foreground"
@@ -138,7 +138,7 @@ export function PersonNode({ id, data }: NodeProps<PersonNodeType>) {
           )}
         </div>
         <Handle
-          id={HANDLE_MARRIAGE_OUT}
+          id={HANDLE_RELATIONSHIP_OUT}
           type="source"
           position={Position.Right}
           className="!top-1/2 !right-0 !size-2.5 !-translate-y-1/2 !border-2 !border-background !bg-muted-foreground"

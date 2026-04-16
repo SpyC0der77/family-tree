@@ -12,24 +12,24 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useFamilyTreeStore } from "@/lib/family-tree-store";
 import {
-  HANDLE_MARRIAGE_IN,
-  HANDLE_MARRIAGE_OUT,
+  HANDLE_RELATIONSHIP_IN,
+  HANDLE_RELATIONSHIP_OUT,
   type FamilyTreeNodeType,
 } from "@/types/family-tree";
 
 import { ChildEdge } from "./child-edge";
-import { MarriageEdge } from "./marriage-edge";
-import { MarriageJunctionNode } from "./marriage-junction-node";
 import { PersonNode } from "./person-node";
+import { RelationshipEdge } from "./relationship-edge";
+import { RelationshipJunctionNode } from "./relationship-junction-node";
 import { FamilyTreeTopbar } from "./topbar";
 
 const nodeTypes = {
   person: PersonNode,
-  marriageJunction: MarriageJunctionNode,
+  relationshipJunction: RelationshipJunctionNode,
 };
 
 const edgeTypes = {
-  marriage: MarriageEdge,
+  relationship: RelationshipEdge,
   child: ChildEdge,
 };
 
@@ -44,7 +44,7 @@ function FamilyTreeFlow() {
 
   useEffect(() => {
     void Promise.resolve(useFamilyTreeStore.persist.rehydrate()).then(() => {
-      useFamilyTreeStore.getState().migrateMarriageJunctionsIfNeeded();
+      useFamilyTreeStore.getState().migrateRelationshipGraphIfNeeded();
     });
   }, []);
 
@@ -53,8 +53,8 @@ function FamilyTreeFlow() {
     const sourceHandle = c.sourceHandle ?? null;
     const targetHandle = c.targetHandle ?? null;
     return (
-      sourceHandle === HANDLE_MARRIAGE_OUT &&
-      targetHandle === HANDLE_MARRIAGE_IN
+      sourceHandle === HANDLE_RELATIONSHIP_OUT &&
+      targetHandle === HANDLE_RELATIONSHIP_IN
     );
   }, []);
 

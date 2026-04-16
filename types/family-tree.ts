@@ -17,26 +17,28 @@ export interface PersonData extends Record<string, unknown> {
 
 export type PersonNodeType = Node<PersonData, "person">;
 
-export interface MarriageJunctionData extends Record<string, unknown> {
-  marriageEdgeId: string;
+export interface RelationshipJunctionData extends Record<string, unknown> {
+  relationshipEdgeId: string;
 }
 
-export type MarriageJunctionNodeType = Node<
-  MarriageJunctionData,
-  "marriageJunction"
+export type RelationshipJunctionNodeType = Node<
+  RelationshipJunctionData,
+  "relationshipJunction"
 >;
 
-export type FamilyTreeNodeType = PersonNodeType | MarriageJunctionNodeType;
+export type FamilyTreeNodeType =
+  | PersonNodeType
+  | RelationshipJunctionNodeType;
 
-export interface MarriageEdgeData extends Record<string, unknown> {
+export interface RelationshipEdgeData extends Record<string, unknown> {
   junctionId: string;
 }
 
-export type MarriageEdgeType = Edge<MarriageEdgeData, "marriage">;
+export type RelationshipEdgeType = Edge<RelationshipEdgeData, "relationship">;
 
 export type ChildEdgeType = Edge<Record<string, never>, "child">;
 
-export type FamilyTreeEdgeType = MarriageEdgeType | ChildEdgeType;
+export type FamilyTreeEdgeType = RelationshipEdgeType | ChildEdgeType;
 
 export const GENDER_BORDER: Record<Gender, string> = {
   male: "#3b82f6",
@@ -44,8 +46,9 @@ export const GENDER_BORDER: Record<Gender, string> = {
   other: "#f97316",
 };
 
-export const HANDLE_MARRIAGE_IN = "marriage-in";
-export const HANDLE_MARRIAGE_OUT = "marriage-out";
+/** Handle ids are kept for persisted graphs created before the relationship rename. */
+export const HANDLE_RELATIONSHIP_IN = "marriage-in";
+export const HANDLE_RELATIONSHIP_OUT = "marriage-out";
 export const HANDLE_CHILD_TARGET = "child-target";
 export const HANDLE_JUNCTION_OUT = "junction-out";
 
